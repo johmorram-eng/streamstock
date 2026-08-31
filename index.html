@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" id="pwaTitleMeta" content="StreamStock">
+<meta name="apple-mobile-web-app-title" id="pwaTitleMeta" content="NULLA">
 <link id="pwaFavicon" rel="icon" href="">
 <link id="pwaAppleIcon" rel="apple-touch-icon" href="">
-<title id="pwaAppTitle">StreamStock — Neumorfismo</title>
+<title id="pwaAppTitle">NULLA — Neumorfismo</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <style>
@@ -266,7 +266,7 @@ a{color:inherit;text-decoration:none}
     <div class="brand">
       <div class="logo" id="headerLogoBox"><i class="fa-solid fa-layer-group" id="headerLogoIcon"></i></div>
       <div class="brand-text">
-        <h1 id="appTitle">StreamStock</h1>
+        <h1 id="appTitle">NULLA</h1>
         <p id="appSubtitle">Neumorphic Panel</p>
       </div>
     </div>
@@ -364,7 +364,7 @@ a{color:inherit;text-decoration:none}
 
 <button class="fab" onclick="openModal()" id="fabBtn"><i class="fa-solid fa-plus"></i></button>
 
-<!-- MODAL CONFIGURACIÓN -->
+<!-- MODAL CONFIGURACIÓN CON CARGA DE LOGO DESDE ARCHIVO -->
 <div id="modalConfig" class="overlay" onclick="if(event.target===this) closeConfigModal()">
   <div class="modal">
     <div class="modal-head">
@@ -373,7 +373,16 @@ a{color:inherit;text-decoration:none}
     </div>
     <form class="form" onsubmit="saveConfig(event)">
       <div class="field"><label>Nombre de la Aplicación *</label><input id="cfgAppName" required></div>
-      <div class="field"><label>URL del Logo (HTTPS) *</label><input id="cfgAppLogo" type="url" required placeholder="https://..."></div>
+      <div class="field">
+        <label>Cargar Ícono/Logo desde tu Celular o Computador</label>
+        <input id="cfgFileLogo" type="file" accept="image/*" style="padding:6px" onchange="previewLogoFile(event)">
+      </div>
+      <div class="field"><label>O pega la URL del Logo (HTTPS)</label><input id="cfgAppLogo" type="url" placeholder="https://..."></div>
+      <div style="display:grid;place-items:center;margin:8px 0">
+        <div id="logoPreviewBox" style="width:50px;height:50px;border-radius:12px;overflow:hidden;background:var(--bg);box-shadow:inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);display:grid;place-items:center">
+          <i class="fa-solid fa-image" style="color:var(--muted)"></i>
+        </div>
+      </div>
       <button type="submit" class="btn btn-emerald" style="width:100%;justify-content:center;padding:12px;margin-top:6px">Guardar Cambios</button>
     </form>
   </div>
@@ -525,7 +534,7 @@ let db = {
   clientes: JSON.parse(localStorage.getItem('ss_clis')) || [],
   revendedorSaldo: Number(localStorage.getItem('ss_saldo')) || 50000,
   config: JSON.parse(localStorage.getItem('ss_config')) || { 
-    appName: 'StreamStock', 
+    appName: 'NULLA', 
     appLogo: 'https://assets.grok.com/users/b555b36d-e34c-4d25-a87a-d38ea65d1c7f/generated/8e4049f0-d7b4-42d9-8824-c2ed6b75817d/image.jpg' 
   }
 };
@@ -535,6 +544,8 @@ let modoTienda = false;
 
 function applyBranding() {
   const cfg = db.config;
+  if(!cfg.appName) cfg.appName = 'NULLA';
+  
   document.getElementById('appTitle').textContent = cfg.appName;
   document.getElementById('pwaAppTitle').textContent = cfg.appName + ' — Neumorfismo';
   document.getElementById('pwaTitleMeta').setAttribute('content', cfg.appName);
@@ -648,17 +659,42 @@ function saveLocal() {
 }
 
 function openConfigModal() {
-  document.getElementById('cfgAppName').value = db.config.appName || 'StreamStock';
+  document.getElementById('cfgAppName').value = db.config.appName || 'NULLA';
   document.getElementById('cfgAppLogo').value = db.config.appLogo || '';
+  document.getElementById('cfgFileLogo').value = '';
+  const prev = document.getElementById('logoPreviewBox');
+  if(db.config.appLogo) {
+    prev.innerHTML = `<img src="${db.config.appLogo}" style="width:100%;height:100%;object-fit:cover">`;
+  } else {
+    prev.innerHTML = `<i class="fa-solid fa-image" style="color:var(--muted)"></i>`;
+  }
   document.getElementById('modalConfig').classList.add('open');
 }
+
 function closeConfigModal() { document.getElementById('modalConfig').classList.remove('open'); }
+
+function previewLogoFile(event) {
+  const file = event.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      document.getElementById('cfgAppLogo').value = e.target.result;
+      document.getElementById('logoPreviewBox').innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover">`;
+    };
+    reader.readAsDataURL(file);
+  }
+}
 
 function saveConfig(e) {
   e.preventDefault();
   db.config.appName = document.getElementById('cfgAppName').value.trim();
-  db.config.appLogo = document.getElementById('cfgAppLogo').value.trim();
-  saveToCloud(); applyBranding(); closeConfigModal(); toast('¡Guardado!');
+  const urlLogoInput = document.getElementById('cfgAppLogo').value.trim();
+  if(urlLogoInput) db.config.appLogo = urlLogoInput;
+
+  saveToCloud(); 
+  applyBranding(); 
+  closeConfigModal(); 
+  toast('¡Icono y marca actualizados en todo lado!');
 }
 
 function scrollFilter(amount) {
