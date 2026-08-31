@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" id="pwaTitleMeta" content="StreamStock">
 <link id="pwaFavicon" rel="icon" href="">
+<link id="pwaAppleIcon" rel="apple-touch-icon" href="">
 <title id="pwaAppTitle">StreamStock — Neumorfismo</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
@@ -98,7 +99,7 @@ a{color:inherit;text-decoration:none}
 .view.active{display:block}
 
 /* DASHBOARD FINANCIERO SUPERIOR */
-.finance-bar{display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:12px;margin-bottom:14px}
+.finance-bar{display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:12px;margin-bottom:14px}
 .finance-card{
   background:var(--card);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;
   box-shadow: 5px 5px 10px var(--shadow-dark), -5px -5px 10px var(--shadow-light);
@@ -298,8 +299,8 @@ a{color:inherit;text-decoration:none}
         <span class="title">Ventas Mes</span>
         <span class="val" id="dashVentasMes" style="color:var(--emerald-dark)">$0</span>
       </div>
-      <div class="finance-card">
-        <span class="title">Vencen Pronto (≤3 días)</span>
+      <div class="finance-card" style="cursor:pointer" onclick="currentFilter='VENCEN_PRONTO';render()" title="Ver cuentas por vencer">
+        <span class="title">Vencen Pronto (≤3d)</span>
         <span class="val" id="dashVencenPronto" style="color:#d97706">0</span>
       </div>
     </div>
@@ -372,7 +373,7 @@ a{color:inherit;text-decoration:none}
     </div>
     <form class="form" onsubmit="saveConfig(event)">
       <div class="field"><label>Nombre de la Aplicación *</label><input id="cfgAppName" required></div>
-      <div class="field"><label>URL del Logo *</label><input id="cfgAppLogo" type="url" required placeholder="https://..."></div>
+      <div class="field"><label>URL del Logo (HTTPS) *</label><input id="cfgAppLogo" type="url" required placeholder="https://..."></div>
       <button type="submit" class="btn btn-emerald" style="width:100%;justify-content:center;padding:12px;margin-top:6px">Guardar Cambios</button>
     </form>
   </div>
@@ -442,7 +443,7 @@ a{color:inherit;text-decoration:none}
           <div class="field"><label>Compra *</label><input id="vFCompra" type="date" required></div>
           <div class="field"><label>Vencimiento *</label><input id="vFVence" type="date" required></div>
         </div>
-        <button type="submit" class="btn btn-emerald" style="width:100%;justify-content:center;padding:12px;margin-top:6px">Confirmar Venta</button>
+        <button type="submit" class="btn btn-emerald" style="width:100%;justify-content:center;padding:12px;margin-top:6px">Confirmar Venta y Ver Plantilla</button>
       </form>
     </div>
   </div>
@@ -499,7 +500,7 @@ a{color:inherit;text-decoration:none}
         <div class="field"><label>Sigla *</label><input id="pSigla" required maxlength="3" style="text-transform:uppercase"></div>
         <div class="field"><label>Color</label><input id="pColor" type="color" value="#10b981" style="height:38px;padding:2px"></div>
       </div>
-      <div class="field"><label>URL del Logo</label><input id="pLogo" type="url"></div>
+      <div class="field"><label>URL del Logo (HTTPS)</label><input id="pLogo" type="url" placeholder="https://..."></div>
       <div style="display:flex;gap:8px;margin-top:6px">
         <button type="submit" class="btn btn-emerald" style="flex:1;justify-content:center;padding:12px">Guardar</button>
         <button type="button" id="btnDelPlat" class="btn" style="background:#fef2f2;color:#dc2626;display:none;padding:12px" onclick="deletePlatform()"><i class="fa-solid fa-trash"></i></button>
@@ -513,6 +514,7 @@ a{color:inherit;text-decoration:none}
 <script>
 const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxO4P2hA_ZICYFIoepy2jqpvCp10MP5jnfv7qZGRY4YDPQzFaUpaQ9Acz0C4PqfBOFA5g/exec';
 const APP_TOKEN = 'StreamStock_ClaveSecreta_2026_jjsb';
+
 let db = {
   cuentas: JSON.parse(localStorage.getItem('ss_cuentas')) || [],
   plataformas: JSON.parse(localStorage.getItem('ss_plats')) || [
@@ -538,9 +540,11 @@ function applyBranding() {
   if(cfg.appLogo) {
     logoBox.innerHTML = `<img src="${cfg.appLogo}" alt="Logo" onerror="this.parentElement.innerHTML='<i class=\'fa-solid fa-layer-group\'></i>'">`;
     document.getElementById('pwaFavicon').href = cfg.appLogo;
+    document.getElementById('pwaAppleIcon').href = cfg.appLogo;
   } else {
     logoBox.innerHTML = `<i class="fa-solid fa-layer-group"></i>`;
     document.getElementById('pwaFavicon').href = '';
+    document.getElementById('pwaAppleIcon').href = '';
   }
 }
 
@@ -739,7 +743,25 @@ function render() {
 
   const filtered = db.cuentas.filter(c => {
     const matchTxt = `${c.plataforma} ${c.correo} ${c.cliente}`.toLowerCase().includes(q);
-    let matchCat = (currentFilter === 'Todas') || (currentFilter === 'DISPONIBLES' && c.estado==='disponible') || (currentFilter === 'VENDIDAS' && c.estado==='vendido') || (currentFilter === 'DEBE' && c.estado==='vendido' && c.pago==='Debe') || (c.plataforma === currentFilter);
+    
+    let matchCat = true;
+    if (currentFilter === 'Todas') {
+      matchCat = true;
+    } else if (currentFilter === 'DISPONIBLES') {
+      matchCat = (c.estado === 'disponible');
+    } else if (currentFilter === 'VENDIDAS') {
+      matchCat = (c.estado === 'vendido');
+    } else if (currentFilter === 'DEBE') {
+      matchCat = (c.estado === 'vendido' && c.pago === 'Debe');
+    } else if (currentFilter === 'VENCEN_PRONTO') {
+      if (c.estado !== 'vendido' || !c.fvence) return false;
+      let fVenceDate = new Date(c.fvence.includes('T') ? c.fvence.split('T')[0] : c.fvence + 'T00:00:00');
+      let diffDays = Math.ceil((fVenceDate - ahora) / (1000 * 60 * 60 * 24));
+      matchCat = (diffDays <= 3);
+    } else {
+      matchCat = (c.plataforma === currentFilter);
+    }
+
     return matchTxt && matchCat;
   });
 
@@ -761,8 +783,12 @@ function render() {
       <div class="pill-icon"><i class="fa-solid fa-bag-shopping"></i></div>
       <div style="display:flex;flex-direction:column"><span style="font-size:12px;font-weight:800">Vendidas</span><span style="font-size:9.5px;color:var(--muted)">${db.cuentas.filter(c=>c.estado==='vendido').length}</span></div>
     </div>
+    <div class="filter-pill ${currentFilter==='VENCEN_PRONTO'?'active':''}" onclick="currentFilter='VENCEN_PRONTO';render()">
+      <div class="pill-icon" style="color:#d97706"><i class="fa-solid fa-triangle-exclamation"></i></div>
+      <div style="display:flex;flex-direction:column"><span style="font-size:12px;font-weight:800;color:#d97706">Por Vencer</span><span style="font-size:9.5px;color:var(--muted)">${vencenProntoCount}</span></div>
+    </div>
     <div class="filter-pill ${currentFilter==='DEBE'?'active':''}" onclick="currentFilter='DEBE';render()">
-      <div class="pill-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+      <div class="pill-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
       <div style="display:flex;flex-direction:column"><span style="font-size:12px;font-weight:800;color:#dc2626">Deudas</span><span style="font-size:9.5px;color:var(--muted)">${db.cuentas.filter(c=>c.estado==='vendido'&&c.pago==='Debe').length}</span></div>
     </div>
   `;
@@ -978,20 +1004,54 @@ function openVenderModal(id) {
   const hoy = new Date(); const vence = new Date(); vence.setDate(vence.getDate() + 30);
   document.getElementById('vFCompra').value = hoy.toISOString().split('T')[0];
   document.getElementById('vFVence').value = vence.toISOString().split('T')[0];
+  
+  // Restaurar formulario original en el modal si venía de plantilla de éxito
+  document.getElementById('venderModalBody').innerHTML = `
+    <form id="formVender" onsubmit="confirmVender(event)">
+      <input type="hidden" id="vId" value="${id}">
+      <div class="field"><label>Nombre del Cliente *</label><input id="vCli" required placeholder="Ej: Johana"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field"><label>Precio (COP) *</label><input id="vPre" type="number" required placeholder="15000"></div>
+        <div class="field"><label>Pago *</label><select id="vPago" required><option value="Pagado">🟢 Pagado</option><option value="Debe">🔴 Debe</option></select></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+        <div class="field"><label>Compra *</label><input id="vFCompra" type="date" value="${hoy.toISOString().split('T')[0]}" required></div>
+        <div class="field"><label>Vencimiento *</label><input id="vFVence" type="date" value="${vence.toISOString().split('T')[0]}" required></div>
+      </div>
+      <button type="submit" class="btn btn-emerald" style="width:100%;justify-content:center;padding:12px;margin-top:6px">Confirmar Venta y Ver Plantilla</button>
+    </form>
+  `;
   document.getElementById('modalVender').classList.add('open');
 }
 function closeVenderModal() { document.getElementById('modalVender').classList.remove('open'); }
 
 function confirmVender(e) {
   e.preventDefault();
-  const id = document.getElementById('vId').value; const it = db.cuentas.find(c => c.id === id);
+  const id = document.getElementById('vId').value; 
+  const it = db.cuentas.find(c => c.id === id);
+  if(!it) return;
+
   it.estado = 'vendido';
   it.cliente = document.getElementById('vCli').value.trim();
   it.precio = document.getElementById('vPre').value.replace(/\D/g,'');
   it.pago = document.getElementById('vPago').value;
   it.fventa = document.getElementById('vFCompra').value;
   it.fvence = document.getElementById('vFVence').value;
-  saveToCloud(); closeVenderModal(); renderAll(); toast('¡Vendido!');
+  
+  saveToCloud(); 
+  renderAll(); 
+  toast('¡Vendido con éxito!');
+
+  // Mostrar plantilla de éxito con botón de copiar WhatsApp en el mismo modal
+  const txtWp = `🤖 *${it.plataforma.toUpperCase()} – ACCESO*\n\n👤 Cliente: ${it.cliente}\n📧 Correo: ${it.correo}\n🔑 Contraseña: ${it.password}\n${it.pin?'📌 PIN: '+it.pin+'\n':''}📅 Vence: ${formatDateLocal(it.fvence)}\n\n¡Gracias por tu compra! ✨`;
+  
+  document.getElementById('venderModalBody').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="background:var(--bg);padding:12px;border-radius:12px;font-size:12px;font-family:'JetBrains Mono',monospace;white-space:pre-wrap;box-shadow:inset 2px 2px 5px var(--shadow-dark)">${txtWp}</div>
+      <button class="btn btn-emerald" style="width:100%;justify-content:center;padding:12px" onclick="navigator.clipboard.writeText(\`${txtWp}\`).then(()=>toast('¡Plantilla copiada para WhatsApp!'))"><i class="fa-brands fa-whatsapp"></i> Copiar Plantilla WhatsApp</button>
+      <button class="btn" style="width:100%;justify-content:center;padding:10px;background:var(--bg)" onclick="closeVenderModal()">Cerrar</button>
+    </div>
+  `;
 }
 
 function openRenovarModal(id) {
