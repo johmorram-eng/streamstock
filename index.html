@@ -151,7 +151,7 @@ td{padding:12px;border-bottom:1px solid rgba(0,0,0,.03);color:var(--text2)}
 </head>
 <body>
 
-<div id="syncBanner" class="sync-banner"><i class="fa-solid fa-cloud-arrow-up"></i> Sincronizando con Google Cloud...</div>
+<div id="syncBanner" class="sync-banner"><i class="fa-solid fa-cloud-arrow-up"></i> Descargando datos de Google Sheets...</div>
 
 <div class="topbar-wrap">
   <header class="header">
@@ -163,8 +163,7 @@ td{padding:12px;border-bottom:1px solid rgba(0,0,0,.03);color:var(--text2)}
       </div>
     </div>
     <div class="header-actions">
-      <button class="btn" style="background:#fef2f2;color:#dc2626;font-size:10.5px" onclick="openRestaurarModal()" title="Restaurar datos"><i class="fa-solid fa-file-import"></i> Cargar Respaldo V1</button>
-      <button class="icon-btn" onclick="syncWithCloud()" title="Sincronizar"><i class="fa-solid fa-rotate"></i></button>
+      <button class="btn" style="background:#fef2f2;color:#dc2626;font-size:10.5px" onclick="syncWithCloud()" title="Descargar de la nube"><i class="fa-solid fa-cloud-arrow-down"></i> Sincronizar Google Sheets</button>
       <button class="btn btn-primary" onclick="openModalCuenta()"><i class="fa-solid fa-plus"></i> Cuenta</button>
     </div>
   </header>
@@ -240,18 +239,6 @@ td{padding:12px;border-bottom:1px solid rgba(0,0,0,.03);color:var(--text2)}
         <thead><tr><th>Fecha/Hora</th><th>Usuario</th><th>Acción</th><th>Módulo</th><th>Detalle</th></tr></thead>
         <tbody id="auditoriaTableBody"></tbody>
       </table>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL RESTAURAR / PEGAR DATOS V1 -->
-<div id="modalRestaurar" class="overlay" onclick="if(event.target===this)closeRestaurarModal()">
-  <div class="modal">
-    <div class="modal-head"><h2>Restaurar / Migrar tus Datos V1</h2><button class="icon-btn" onclick="closeRestaurarModal()"><i class="fa-solid fa-xmark"></i></button></div>
-    <div class="form">
-      <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Si tienes el código JSON de tu base de datos anterior (o los datos de tus cuentas), pégalo aquí para pasarlo automáticamente a la V2:</p>
-      <div class="field"><label>Pegar JSON de cuentas / respaldo V1</label><textarea id="jsonRespaldo" rows="6" placeholder='[{"plataforma":"Netflix","correo":"...","password":"...","estado":"vendido","cliente":"...","precio":"15000","pago":"Pagado","fvence":"2026-10-01"}]'></textarea></div>
-      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px" onclick="ejecutarRestauracionManual()">Procesar y Migrar a V2</button>
     </div>
   </div>
 </div>
@@ -356,72 +343,103 @@ let db = {
   config: JSON.parse(localStorage.getItem('ss_v2_config')) || { appName: 'StreamStock V2' }
 };
 
-function openRestaurarModal() { document.getElementById('modalRestaurar').classList.add('open'); }
-function closeRestaurarModal() { document.getElementById('modalRestaurar').classList.remove('open'); }
-
-function ejecutarRestauracionManual() {
+// MOTOR DE SINCRONIZACIÓN DIRECTA CON TU GOOGLE SHEETS
+async function syncWithCloud() {
+  document.getElementById('syncBanner').style.display='block';
   try {
-    const raw = document.getElementById('jsonRespaldo').value.trim();
-    const v1Cuentas = JSON.parse(raw);
-    if(!Array.isArray(v1Cuentas)) throw new Error('Debe ser un arreglo JSON válido');
+    const res = await fetch(WEB_APP_URL + '?action=cargar');
+    const cloud = await res.json();
+    
+    // Si tu nube trae datos, los procesamos mediante ETL a la estructura V2
+    if(cloud.cuentas && Array.isArray(cloud.cuentas)) {
+      procesarDatosNube(cloud.cuentas, cloud.plataformas || [], cloud.clientes || []);
+      toast('¡Datos descargados y sincronizados desde Google Sheets! 🎉');
+    } else {
+      toast('No se encontraron cuentas en la nube.');
+    }
+  } catch(e) {
+    alert('❌ Error de conexión con Google Sheets: ' + e.message);
+  }
+  document.getElementById('syncBanner').style.display='none';
+}
 
-    // Procesar ETL V1 a V2
-    db.cuentas = []; db.perfiles = []; db.ventas = []; db.pagos = []; db.clientes = [];
+function procesarDatosNube(v1Cuentas, v1Plats, v1Clis) {
+  db.cuentas = []; db.perfiles = []; db.ventas = []; db.pagos = []; db.clientes = []; db.plataformas = [];
 
-    v1Cuentas.forEach(v1 => {
-      let pltName = v1.plataforma || 'General';
-      let plt = db.plataformas.find(p => p.nombre.toLowerCase() === pltName.toLowerCase());
-      if(!plt) {
-        plt = { id: 'plt_' + Math.random().toString(36).substr(2,9), nombre: pltName, sigla: pltName.slice(0,2).toUpperCase(), color: '#10b981' };
-        db.plataformas.push(plt);
-      }
+  // 1. Plataformas
+  v1Plats.forEach(p => {
+    let pName = p.name || p.nombre || 'Plataforma';
+    db.plataformas.push({
+      id: 'plt_' + Math.random().toString(36).substr(2,9),
+      nombre: pName,
+      sigla: p.sigla || pName.slice(0,2).toUpperCase(),
+      color: p.color || '#10b981'
+    });
+  });
 
-      let cuentaId = 'acc_' + Math.random().toString(36).substr(2,9);
-      db.cuentas.push({
-        id: cuentaId, plataforma_id: plt.id, correo: v1.correo, contraseña: v1.password || v1.pass || '', pin: v1.pin || '',
-        costo_compra: Number(v1.precio) || 30000, slots_totales: 1, fecha_compra: v1.fventa || new Date().toISOString().split('T')[0],
-        fecha_vencimiento: v1.fvence || new Date().toISOString().split('T')[0], estado: 'activa', notas: v1.notas || ''
-      });
+  // 2. Clientes
+  v1Clis.forEach(c => {
+    let cName = c.nombreReal || c.nombre || 'Cliente';
+    db.clientes.push({
+      id: 'cli_' + Math.random().toString(36).substr(2,9),
+      nombre: cName,
+      telefono: c.telefono || '3000000000',
+      email: c.email || '',
+      estado: 'activo',
+      fecha_creacion: new Date().toISOString()
+    });
+  });
 
-      let cliName = v1.cliente || (v1.estado === 'vendido' ? 'Cliente General' : null);
-      let cli = null;
-      if(cliName) {
-        cli = db.clientes.find(c => c.nombre.toLowerCase() === cliName.toLowerCase());
-        if(!cli) {
-          cli = { id: 'cli_' + Math.random().toString(36).substr(2,9), nombre: cliName, telefono: '3000000000', email: '', estado: 'activo', fecha_creacion: new Date().toISOString() };
-          db.clientes.push(cli);
-        }
-      }
+  // 3. Cuentas y perfiles
+  v1Cuentas.forEach(v1 => {
+    let pltName = v1.plataforma || 'General';
+    let plt = db.plataformas.find(p => p.nombre.toLowerCase() === pltName.toLowerCase());
+    if(!plt) {
+      plt = { id: 'plt_' + Math.random().toString(36).substr(2,9), nombre: pltName, sigla: pltName.slice(0,2).toUpperCase(), color: '#10b981' };
+      db.plataformas.push(plt);
+    }
 
-      let perfilId = 'prf_' + Math.random().toString(36).substr(2,9);
-      db.perfiles.push({
-        id: perfilId, cuenta_id: cuentaId, nombre_perfil: v1.pantallas || 'Perfil Principal', pin_perfil: v1.pin || '',
-        estado: v1.estado === 'vendido' ? 'vendido' : 'disponible', cliente_id: cli ? cli.id : null
-      });
-
-      if (v1.estado === 'vendido' && cli) {
-        let ventaId = 'ven_' + Math.random().toString(36).substr(2,9);
-        let precioVenta = Number(v1.precio) || 15000;
-        db.ventas.push({
-          id: ventaId, cliente_id: cli.id, perfil_id: perfilId, cuenta_id: cuentaId, precio_venta: precioVenta,
-          costo_asignado: Math.round(precioVenta * 0.5), utilidad: Math.round(precioVenta * 0.5),
-          fecha_venta: v1.fventa || new Date().toISOString(), fecha_vencimiento: v1.fvence || new Date().toISOString().split('T')[0],
-          estado: 'vigente', tipo_registro: 'venta_nueva'
-        });
-
-        if (v1.pago === 'Pagado') {
-          db.pagos.push({ id: 'pag_' + Math.random().toString(36).substr(2,9), venta_id: ventaId, cliente_id: cli.id, monto: precioVenta, metodo: 'efectivo', fecha: new Date().toISOString(), referencia: 'Respaldo Manual' });
-        }
-      }
+    let cuentaId = 'acc_' + Math.random().toString(36).substr(2,9);
+    db.cuentas.push({
+      id: cuentaId, plataforma_id: plt.id, correo: v1.correo, contraseña: v1.password || v1.pass || '', pin: v1.pin || '',
+      costo_compra: Number(v1.precio) || 30000, slots_totales: 1, fecha_compra: v1.fventa || new Date().toISOString().split('T')[0],
+      fecha_vencimiento: v1.fvence || new Date().toISOString().split('T')[0], estado: 'activa', notas: v1.notas || ''
     });
 
-    saveLocal();
-    closeRestaurarModal();
-    renderAll();
-    toast('¡Datos restaurados y migrados con éxito! 🎉');
-  } catch(err) {
-    alert('❌ Error en el formato JSON: ' + err.message);
-  }
+    let cliName = v1.cliente || (v1.estado === 'vendido' ? 'Cliente General' : null);
+    let cli = null;
+    if(cliName) {
+      cli = db.clientes.find(c => c.nombre.toLowerCase() === cliName.toLowerCase());
+      if(!cli) {
+        cli = { id: 'cli_' + Math.random().toString(36).substr(2,9), nombre: cliName, telefono: '3000000000', email: '', estado: 'activo', fecha_creacion: new Date().toISOString() };
+        db.clientes.push(cli);
+      }
+    }
+
+    let perfilId = 'prf_' + Math.random().toString(36).substr(2,9);
+    db.perfiles.push({
+      id: perfilId, cuenta_id: cuentaId, nombre_perfil: v1.pantallas || 'Perfil Principal', pin_perfil: v1.pin || '',
+      estado: v1.estado === 'vendido' ? 'vendido' : 'disponible', cliente_id: cli ? cli.id : null
+    });
+
+    if (v1.estado === 'vendido' && cli) {
+      let ventaId = 'ven_' + Math.random().toString(36).substr(2,9);
+      let precioVenta = Number(v1.precio) || 15000;
+      db.ventas.push({
+        id: ventaId, cliente_id: cli.id, perfil_id: perfilId, cuenta_id: cuentaId, precio_venta: precioVenta,
+        costo_asignado: Math.round(precioVenta * 0.5), utilidad: Math.round(precioVenta * 0.5),
+        fecha_venta: v1.fventa || new Date().toISOString(), fecha_vencimiento: v1.fvence || new Date().toISOString().split('T')[0],
+        estado: 'vigente', tipo_registro: 'venta_nueva'
+      });
+
+      if (v1.pago === 'Pagado') {
+        db.pagos.push({ id: 'pag_' + Math.random().toString(36).substr(2,9), venta_id: ventaId, cliente_id: cli.id, monto: precioVenta, metodo: 'efectivo', fecha: new Date().toISOString(), referencia: 'Sincronización Cloud' });
+      }
+    }
+  });
+
+  saveLocal();
+  renderAll();
 }
 
 function saveLocal() {
@@ -432,24 +450,6 @@ function saveLocal() {
   localStorage.setItem('ss_v2_ventas', JSON.stringify(db.ventas));
   localStorage.setItem('ss_v2_pagos', JSON.stringify(db.pagos));
   localStorage.setItem('ss_v2_auditoria', JSON.stringify(db.auditoria));
-}
-
-function registrarAuditoria(usuario, modulo, accion, registroId, detalle) {
-  db.auditoria.unshift({
-    id: 'aud_' + Date.now() + Math.random().toString(36).substr(2,4),
-    usuario: usuario || 'Admin', modulo, accion, registro_id: registroId || 'N/A', detalle, timestamp: new Date().toLocaleString()
-  });
-  saveLocal();
-}
-
-async function syncWithCloud() {
-  document.getElementById('syncBanner').style.display='block';
-  try {
-    const res = await fetch(WEB_APP_URL + '?action=cargar');
-    const cloud = await res.json();
-    if(cloud.v2_cuentas) { db.cuentas = cloud.v2_cuentas; saveLocal(); renderAll(); toast('Sincronizado con la nube'); }
-  } catch(e) {}
-  document.getElementById('syncBanner').style.display='none';
 }
 
 function switchView(v) {
@@ -509,10 +509,10 @@ function renderInventario() {
   document.getElementById('fcPlat').innerHTML = db.plataformas.map(p=>`<option value="${p.id}">${p.nombre || p.name}</option>`).join('');
 
   const cuentasFiltradas = db.cuentas.filter(c => c.correo.toLowerCase().includes(q));
-  if(cuentasFiltradas.length === 0) { container.innerHTML = `<div class="empty">Sin cuentas registradas</div>`; return; }
+  if(cuentasFiltradas.length === 0) { container.innerHTML = `<div class="empty">Sin cuentas registradas. Haz clic en "Sincronizar Google Sheets" arriba.</div>`; return; }
 
   cuentasFiltradas.forEach(acc => {
-    const plt = db.plataformas.find(p => p.id === acc.plataforma_id || p.name === acc.plataforma) || {nombre:'Plataforma', sigla:'PL', color:'#10b981'};
+    const plt = db.plataformas.find(p => p.id === acc.plataforma_id || p.nombre === acc.plataforma) || {nombre:'Plataforma', sigla:'PL', color:'#10b981'};
     const slots = db.perfiles.filter(p => p.cuenta_id === acc.id);
     
     const card = document.createElement('div');
@@ -683,7 +683,6 @@ function saveCuenta(e) {
     });
   }
 
-  registrarAuditoria('Admin', 'INVENTARIO', 'CREAR_CUENTA', cuentaId, `Cuenta ${document.getElementById('fcCorreo').value} con ${slots} perfiles`);
   saveLocal(); closeModalCuenta(); renderAll(); toast('Cuenta y perfiles creados');
 }
 
@@ -713,7 +712,6 @@ function confirmVenta(e) {
     });
   }
 
-  registrarAuditoria('Admin', 'VENTAS', 'REGISTRAR_VENTA', ventaId, `Venta por ${formatCOP(precio)} con abono de ${formatCOP(abono)}`);
   saveLocal(); closeModalVenta(); renderAll(); toast('¡Venta registrada con éxito!');
 }
 
@@ -731,6 +729,8 @@ if (db.plataformas.length === 0) {
   saveLocal();
 }
 renderAll();
+// Descarga automática de la nube al iniciar
+syncWithCloud();
 </script>
 </body>
 </html>
