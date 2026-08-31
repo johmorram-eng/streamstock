@@ -258,7 +258,7 @@ a{color:inherit;text-decoration:none}
 </head>
 <body>
 
-<div id="syncBanner" class="sync-banner"><i class="fa-solid fa-cloud-arrow-up"></i> Sincronizando con la nube...</div>
+<div id="syncBanner" class="sync-banner"><i class="fa-solid fa-cloud-arrow-up"></i> Sincronizando con Google Sheets...</div>
 
 <div class="topbar-wrap">
   <header class="header">
@@ -508,6 +508,8 @@ a{color:inherit;text-decoration:none}
 
 <script>
 const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwVi_G-44EKkLmn1Qtk6LdeWxoiGYSV9WoeZQtQoV9bttpjaQCxgz3Akug4oz3sMjDjVQ/exec';
+// 👉 [LÍNEA 545] Aquí debes escribir tu clave secreta larga y única (ej: 'mi_clave_secreta_streamstock_9876')
+const APP_TOKEN = 'PON-AQUI-UNA-CLAVE-LARGA-Y-UNICA';
 
 let db = {
   cuentas: JSON.parse(localStorage.getItem('ss_cuentas')) || [],
@@ -543,24 +545,49 @@ function applyBranding() {
 async function syncWithCloud() {
   document.getElementById('syncBanner').style.display='block';
   try {
-    const res = await fetch(WEB_APP_URL + '?action=cargar');
+    const res = await fetch(WEB_APP_URL + '?action=cargar&token=' + encodeURIComponent(APP_TOKEN));
     const cloud = await res.json();
-    if(cloud.cuentas) db.cuentas = cloud.cuentas;
-    if(cloud.plataformas) db.plataformas = cloud.plataformas;
-    if(cloud.clientes) db.clientes = cloud.clientes;
+    
+    if (cloud.error) {
+      toast('❌ Error de autenticación: ' + cloud.error);
+      document.getElementById('syncBanner').style.display='none';
+      return;
+    }
+
+    if(cloud.cuentas && Array.isArray(cloud.cuentas)) db.cuentas = cloud.cuentas;
+    if(cloud.plataformas && Array.isArray(cloud.plataformas)) db.plataformas = cloud.plataformas;
+    if(cloud.clientes && Array.isArray(cloud.clientes)) db.clientes = cloud.clientes;
     if(cloud.revendedorSaldo !== undefined) db.revendedorSaldo = cloud.revendedorSaldo;
     if(cloud.config) db.config = cloud.config;
     saveLocal();
     applyBranding();
     renderAll();
-    toast('Actualizado desde la nube');
-  } catch(e) {}
+    toast('¡Sincronizado con Google Sheets!');
+  } catch(e) {
+    toast('❌ Error al conectar con la nube');
+  }
   document.getElementById('syncBanner').style.display='none';
 }
 
 async function saveToCloud() {
   saveLocal();
-  try { fetch(WEB_APP_URL, { method: 'POST', body: JSON.stringify(db) }); } catch(e) {}
+  try {
+    const payload = {
+      token: APP_TOKEN,
+      cuentas: db.cuentas,
+      plataformas: db.plataformas,
+      clientes: db.clientes,
+      revendedorSaldo: db.revendedorSaldo,
+      config: db.config
+    };
+    
+    const res = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch(e) {}
 }
 
 function saveLocal() {
