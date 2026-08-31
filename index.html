@@ -577,6 +577,7 @@ async function syncWithCloud() {
 
 async function saveToCloud() {
   saveLocal();
+  document.getElementById('syncBanner').style.display='block';
   try {
     const payload = {
       token: APP_TOKEN,
@@ -590,10 +591,16 @@ async function saveToCloud() {
     await fetch(WEB_APP_URL, {
       method: 'POST',
       mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      cache: 'no-cache',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      keepalive: true
     });
-  } catch(e) {}
+    setTimeout(() => { document.getElementById('syncBanner').style.display='none'; }, 1000);
+  } catch(e) {
+    document.getElementById('syncBanner').style.display='none';
+  }
 }
 
 function saveLocal() {
@@ -1005,7 +1012,6 @@ function openVenderModal(id) {
   document.getElementById('vFCompra').value = hoy.toISOString().split('T')[0];
   document.getElementById('vFVence').value = vence.toISOString().split('T')[0];
   
-  // Restaurar formulario original en el modal si venía de plantilla de éxito
   document.getElementById('venderModalBody').innerHTML = `
     <form id="formVender" onsubmit="confirmVender(event)">
       <input type="hidden" id="vId" value="${id}">
@@ -1042,7 +1048,6 @@ function confirmVender(e) {
   renderAll(); 
   toast('¡Vendido con éxito!');
 
-  // Mostrar plantilla de éxito con botón de copiar WhatsApp en el mismo modal
   const txtWp = `🤖 *${it.plataforma.toUpperCase()} – ACCESO*\n\n👤 Cliente: ${it.cliente}\n📧 Correo: ${it.correo}\n🔑 Contraseña: ${it.password}\n${it.pin?'📌 PIN: '+it.pin+'\n':''}📅 Vence: ${formatDateLocal(it.fvence)}\n\n¡Gracias por tu compra! ✨`;
   
   document.getElementById('venderModalBody').innerHTML = `
