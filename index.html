@@ -512,7 +512,7 @@ a{color:inherit;text-decoration:none}
 <div id="toast" class="toast"><i class="fa-solid fa-check" style="color:var(--emerald)"></i><span id="toastMsg">Listo</span></div>
 
 <script>
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyczGwwJnXFe4isTzfMc9ArWVOQdQapm-wTdrv5o_HOgvDNmhYo6OSMMrkJ9Fq1Alib-A/exec';
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbweOSdT5cWFBlmypjX2XKmecGLwME8VHUcm5MGc84Q_KA8bPerQ3A1dWaH5RANP2zP0ng/exec';
 const APP_TOKEN = 'StreamStock_ClaveSecreta_2026_jjsb';
 
 let db = {
@@ -575,26 +575,65 @@ async function syncWithCloud() {
   document.getElementById('syncBanner').style.display='none';
 }
 
-async function saveToCloud() {
+function saveToCloud() {
   saveLocal();
   document.getElementById('syncBanner').style.display='block';
-  try {
-    const payload = {
-      cuentas: db.cuentas,
-      plataformas: db.plataformas,
-      clientes: db.clientes,
-      revendedorSaldo: db.revendedorSaldo,
-      config: db.config
-    };
-    
-    const jsonStr = encodeURIComponent(JSON.stringify(payload));
-    await fetch(`${WEB_APP_URL}?action=guardar&token=${encodeURIComponent(APP_TOKEN)}&data=${jsonStr}`);
-    
-    setTimeout(() => { document.getElementById('syncBanner').style.display='none'; }, 800);
-  } catch(e) {
-    document.getElementById('syncBanner').style.display='none';
-    toast('⚠️ Guardado localmente');
+  
+  const payload = {
+    token: APP_TOKEN,
+    action: 'guardar',
+    cuentas: db.cuentas,
+    plataformas: db.plataformas,
+    clientes: db.clientes,
+    revendedorSaldo: db.revendedorSaldo,
+    config: db.config
+  };
+
+  let iframe = document.getElementById('hidden_iframe');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'hidden_iframe';
+    iframe.name = 'hidden_iframe';
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
   }
+
+  let form = document.getElementById('hidden_form');
+  if (!form) {
+    form = document.createElement('form');
+    form.id = 'hidden_form';
+    form.method = 'POST';
+    form.action = WEB_APP_URL;
+    form.target = 'hidden_iframe';
+    document.body.appendChild(form);
+  } else {
+    form.innerHTML = '';
+  }
+
+  const inputAction = document.createElement('input');
+  inputAction.type = 'hidden';
+  inputAction.name = 'action';
+  inputAction.value = 'guardar';
+  form.appendChild(inputAction);
+
+  const inputToken = document.createElement('input');
+  inputToken.type = 'hidden';
+  inputToken.name = 'token';
+  inputToken.value = APP_TOKEN;
+  form.appendChild(inputToken);
+
+  const inputData = document.createElement('input');
+  inputData.type = 'hidden';
+  inputData.name = 'data';
+  inputData.value = encodeURIComponent(JSON.stringify(payload));
+  form.appendChild(inputData);
+
+  form.submit();
+  
+  setTimeout(() => {
+    document.getElementById('syncBanner').style.display='none';
+    toast('☁️ Guardado en Google Sheets');
+  }, 1200);
 }
 
 function saveLocal() {
