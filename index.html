@@ -163,6 +163,7 @@ td{padding:12px;border-bottom:1px solid rgba(0,0,0,.03);color:var(--text2)}
       </div>
     </div>
     <div class="header-actions">
+      <button class="btn" style="background:#fef2f2;color:#dc2626;font-size:10.5px" onclick="openRestaurarModal()" title="Restaurar datos"><i class="fa-solid fa-file-import"></i> Cargar Respaldo V1</button>
       <button class="icon-btn" onclick="syncWithCloud()" title="Sincronizar"><i class="fa-solid fa-rotate"></i></button>
       <button class="btn btn-primary" onclick="openModalCuenta()"><i class="fa-solid fa-plus"></i> Cuenta</button>
     </div>
@@ -239,6 +240,18 @@ td{padding:12px;border-bottom:1px solid rgba(0,0,0,.03);color:var(--text2)}
         <thead><tr><th>Fecha/Hora</th><th>Usuario</th><th>Acción</th><th>Módulo</th><th>Detalle</th></tr></thead>
         <tbody id="auditoriaTableBody"></tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL RESTAURAR / PEGAR DATOS V1 -->
+<div id="modalRestaurar" class="overlay" onclick="if(event.target===this)closeRestaurarModal()">
+  <div class="modal">
+    <div class="modal-head"><h2>Restaurar / Migrar tus Datos V1</h2><button class="icon-btn" onclick="closeRestaurarModal()"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="form">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Si tienes el código JSON de tu base de datos anterior (o los datos de tus cuentas), pégalo aquí para pasarlo automáticamente a la V2:</p>
+      <div class="field"><label>Pegar JSON de cuentas / respaldo V1</label><textarea id="jsonRespaldo" rows="6" placeholder='[{"plataforma":"Netflix","correo":"...","password":"...","estado":"vendido","cliente":"...","precio":"15000","pago":"Pagado","fvence":"2026-10-01"}]'></textarea></div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px" onclick="ejecutarRestauracionManual()">Procesar y Migrar a V2</button>
     </div>
   </div>
 </div>
@@ -343,27 +356,17 @@ let db = {
   config: JSON.parse(localStorage.getItem('ss_v2_config')) || { appName: 'StreamStock V2' }
 };
 
-// MIGRACIÓN ROBUSTA DE DATOS V1 A V2
-function ejecutarMigracionV1aV2() {
-  // Limpiamos temporalmente la llave V2 si está vacía para forzar la lectura del respaldo V1 que acabas de pegar
-  const v1Cuentas = JSON.parse(localStorage.getItem('ss_cuentas')) || [];
-  const v1Plats = JSON.parse(localStorage.getItem('ss_plats')) || [];
-  const v1Clis = JSON.parse(localStorage.getItem('ss_clis')) || [];
+function openRestaurarModal() { document.getElementById('modalRestaurar').classList.add('open'); }
+function closeRestaurarModal() { document.getElementById('modalRestaurar').classList.remove('open'); }
 
-  if (v1Cuentas.length > 0 && db.cuentas.length === 0) {
-    localStorage.setItem('ss_backup_v1', JSON.stringify({ v1Cuentas, v1Plats, v1Clis }));
+function ejecutarRestauracionManual() {
+  try {
+    const raw = document.getElementById('jsonRespaldo').value.trim();
+    const v1Cuentas = JSON.parse(raw);
+    if(!Array.isArray(v1Cuentas)) throw new Error('Debe ser un arreglo JSON válido');
 
-    v1Plats.forEach(p => {
-      if(!db.plataformas.find(x => x.name.toLowerCase() === p.name.toLowerCase())) {
-        db.plataformas.push({ id: 'plt_' + Math.random().toString(36).substr(2,9), nombre: p.name, sigla: p.sigla || p.name.slice(0,2).toUpperCase(), color: p.color || '#10b981' });
-      }
-    });
-
-    v1Clis.forEach(c => {
-      if(!db.clientes.find(x => x.nombre.toLowerCase() === c.nombreReal.toLowerCase())) {
-        db.clientes.push({ id: 'cli_' + Math.random().toString(36).substr(2,9), nombre: c.nombreReal, telefono: '3000000000', email: '', estado: 'activo', fecha_creacion: new Date().toISOString() });
-      }
-    });
+    // Procesar ETL V1 a V2
+    db.cuentas = []; db.perfiles = []; db.ventas = []; db.pagos = []; db.clientes = [];
 
     v1Cuentas.forEach(v1 => {
       let pltName = v1.plataforma || 'General';
@@ -375,14 +378,22 @@ function ejecutarMigracionV1aV2() {
 
       let cuentaId = 'acc_' + Math.random().toString(36).substr(2,9);
       db.cuentas.push({
-        id: cuentaId, plataforma_id: plt.id, correo: v1.correo, contraseña: v1.password, pin: v1.pin || '',
+        id: cuentaId, plataforma_id: plt.id, correo: v1.correo, contraseña: v1.password || v1.pass || '', pin: v1.pin || '',
         costo_compra: Number(v1.precio) || 30000, slots_totales: 1, fecha_compra: v1.fventa || new Date().toISOString().split('T')[0],
         fecha_vencimiento: v1.fvence || new Date().toISOString().split('T')[0], estado: 'activa', notas: v1.notas || ''
       });
 
-      let cli = db.clientes.find(c => c.nombre.toLowerCase() === (v1.cliente || '').toLowerCase());
+      let cliName = v1.cliente || (v1.estado === 'vendido' ? 'Cliente General' : null);
+      let cli = null;
+      if(cliName) {
+        cli = db.clientes.find(c => c.nombre.toLowerCase() === cliName.toLowerCase());
+        if(!cli) {
+          cli = { id: 'cli_' + Math.random().toString(36).substr(2,9), nombre: cliName, telefono: '3000000000', email: '', estado: 'activo', fecha_creacion: new Date().toISOString() };
+          db.clientes.push(cli);
+        }
+      }
+
       let perfilId = 'prf_' + Math.random().toString(36).substr(2,9);
-      
       db.perfiles.push({
         id: perfilId, cuenta_id: cuentaId, nombre_perfil: v1.pantallas || 'Perfil Principal', pin_perfil: v1.pin || '',
         estado: v1.estado === 'vendido' ? 'vendido' : 'disponible', cliente_id: cli ? cli.id : null
@@ -399,22 +410,17 @@ function ejecutarMigracionV1aV2() {
         });
 
         if (v1.pago === 'Pagado') {
-          db.pagos.push({ id: 'pag_' + Math.random().toString(36).substr(2,9), venta_id: ventaId, cliente_id: cli.id, monto: precioVenta, metodo: 'efectivo', fecha: new Date().toISOString(), referencia: 'Migración V1' });
+          db.pagos.push({ id: 'pag_' + Math.random().toString(36).substr(2,9), venta_id: ventaId, cliente_id: cli.id, monto: precioVenta, metodo: 'efectivo', fecha: new Date().toISOString(), referencia: 'Respaldo Manual' });
         }
       }
     });
 
-    registrarAuditoria('SISTEMA', 'MIGRACIÓN', 'DB_V1_TO_V2', null, 'Migración completada con éxito');
     saveLocal();
-  }
-
-  if (db.plataformas.length === 0) {
-    db.plataformas.push(
-      { id: 'p1', nombre: 'Netflix', sigla: 'N', color: '#E50914' },
-      { id: 'p2', nombre: 'Disney+', sigla: 'D+', color: '#113CCF' },
-      { id: 'p3', nombre: 'Prime Video', sigla: 'PR', color: '#00A8E1' }
-    );
-    saveLocal();
+    closeRestaurarModal();
+    renderAll();
+    toast('¡Datos restaurados y migrados con éxito! 🎉');
+  } catch(err) {
+    alert('❌ Error en el formato JSON: ' + err.message);
   }
 }
 
@@ -716,7 +722,14 @@ function toast(msg) {
   t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-ejecutarMigracionV1aV2();
+if (db.plataformas.length === 0) {
+  db.plataformas.push(
+    { id: 'p1', nombre: 'Netflix', sigla: 'N', color: '#E50914' },
+    { id: 'p2', nombre: 'Disney+', sigla: 'D+', color: '#113CCF' },
+    { id: 'p3', nombre: 'Prime Video', sigla: 'PR', color: '#00A8E1' }
+  );
+  saveLocal();
+}
 renderAll();
 </script>
 </body>
