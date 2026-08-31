@@ -681,7 +681,6 @@ function previewLogoFile(event) {
   if (file) {
     const reader = new FileReader();
     reader.onload = function(e) {
-      // Redimensionar imagen para que no pese demasiado al guardarse en Sheets
       const img = new Image();
       img.onload = function() {
         const canvas = document.createElement('canvas');
@@ -910,17 +909,22 @@ function render() {
   }
   document.getElementById('emptyState').style.display = 'none';
 
-  // SI EL FILTRO ES "DEBE", AGRUPAMOS POR CLIENTE EN LUGAR DE PLATAFORMA
+  // SI EL FILTRO ES "DEBE", AGRUPAMOS UNIFICANDO MAYÚSCULAS/MINÚSCULAS DEL CLIENTE
   if (currentFilter === 'DEBE') {
     const clientDebtMap = {};
     filtered.forEach(it => {
-      const cliName = it.cliente ? it.cliente : 'Sin Cliente';
-      if(!clientDebtMap[cliName]) clientDebtMap[cliName] = [];
-      clientDebtMap[cliName].push(it);
+      let rawName = it.cliente ? it.cliente.trim() : 'Sin Cliente';
+      let keyName = rawName.toLowerCase(); // Clave unificada para agrupar sin importar mayúsculas/minúsculas
+      
+      if(!clientDebtMap[keyName]) {
+        clientDebtMap[keyName] = { displayName: rawName, items: [] };
+      }
+      clientDebtMap[keyName].items.push(it);
     });
 
-    Object.keys(clientDebtMap).forEach((cliName, idx) => {
-      const cuentasCli = clientDebtMap[cliName];
+    Object.keys(clientDebtMap).forEach((keyName, idx) => {
+      const group = clientDebtMap[keyName];
+      const cuentasCli = group.items;
       const bodyId = `cliBody_${idx}`;
       let totalDeudaCli = cuentasCli.reduce((sum, c) => sum + (Number(c.precio) || 0), 0);
 
@@ -930,7 +934,7 @@ function render() {
         <div class="group-header" onclick="toggleAccordion('${bodyId}')">
           <div style="display:flex;align-items:center;gap:10px">
             <div style="width:30px;height:30px;border-radius:7px;background:#fef2f2;color:#dc2626;display:grid;place-items:center;font-weight:800;font-size:12px"><i class="fa-solid fa-user-tag"></i></div>
-            <div><b style="font-size:13px">${cliName}</b><div style="font-size:10.5px;color:#dc2626;font-weight:700">Debe: ${formatCOP(totalDeudaCli)}</div></div>
+            <div><b style="font-size:13px">${group.displayName}</b><div style="font-size:10.5px;color:#dc2626;font-weight:700">Debe: ${formatCOP(totalDeudaCli)}</div></div>
           </div>
           <div style="display:flex;align-items:center;gap:6px">
             <span class="badge" style="background:#fef2f2;color:#dc2626">${cuentasCli.length} deuda(s)</span>
@@ -1041,8 +1045,9 @@ function renderClients() {
   const clientMap = {};
   db.cuentas.forEach(c => {
     if(c.estado === 'vendido' && c.cliente) {
-      const key = c.cliente.toLowerCase();
-      if(!clientMap[key]) clientMap[key] = { nombreReal: c.cliente, perfiles: [], debeTotal: 0, tieneDeuda: false };
+      const rawName = c.cliente.trim();
+      const key = rawName.toLowerCase();
+      if(!clientMap[key]) clientMap[key] = { nombreReal: rawName, perfiles: [], debeTotal: 0, tieneDeuda: false };
       clientMap[key].perfiles.push(c);
       if(c.pago === 'Debe') { clientMap[key].debeTotal += Number(c.precio)||0; clientMap[key].tieneDeuda = true; }
     }
@@ -1064,7 +1069,7 @@ function renderClients() {
 function openClientHistorial(nombreCliente) {
   document.getElementById('historialClienteNombre').textContent = `Historial: ${nombreCliente}`;
   const content = document.getElementById('historialContent');
-  const perfiles = db.cuentas.filter(c => c.cliente && c.cliente.toLowerCase() === nombreCliente.toLowerCase());
+  const perfiles = db.cuentas.filter(c => c.cliente && c.cliente.trim().toLowerCase() === nombreCliente.trim().toLowerCase());
   content.innerHTML = perfiles.map(p => `
     <div class="sub-acc-creds">
       <div style="display:flex;justify-content:space-between"><b>${p.plataforma}</b><span class="badge ${p.pago==='Debe'?'badge-vend':'badge-disp'}">${p.pago}</span></div>
